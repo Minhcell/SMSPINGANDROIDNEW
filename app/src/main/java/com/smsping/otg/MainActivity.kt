@@ -43,6 +43,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnClr: Button
     private lateinit var tvRaw: TextView
     private lateinit var tvDecode: TextView
+    private lateinit var tvLatest: TextView
 
     private var portEntries: List<Pair<UsbDevice, Int>> = emptyList()
 
@@ -88,6 +89,7 @@ class MainActivity : AppCompatActivity() {
         btnClr = findViewById(R.id.btnClr)
         tvRaw = findViewById(R.id.tvRaw)
         tvDecode = findViewById(R.id.tvDecode)
+        tvLatest = findViewById(R.id.tvLatest)
         tvRaw.movementMethod = ScrollingMovementMethod()
         tvDecode.movementMethod = ScrollingMovementMethod()
 
@@ -109,7 +111,11 @@ class MainActivity : AppCompatActivity() {
                 query("AT\r\n", 400, "OK"); query("AT+CSQ\r\n", 800, "\\+CSQ")
             }
         }
-        btnClr.setOnClickListener { tvRaw.text = ""; tvDecode.text = ""; synchronized(rxLock) { rxBuf.setLength(0) }; decodedPdus.clear() }
+        btnClr.setOnClickListener {
+            tvRaw.text = ""; tvDecode.text = ""
+            tvLatest.text = "Chưa có kết quả PING"; tvLatest.setTextColor(Color.rgb(85, 85, 85))
+            synchronized(rxLock) { rxBuf.setLength(0) }; decodedPdus.clear()
+        }
 
         rbPing.setOnCheckedChangeListener { _, checked -> if (checked) showPing(true) }
         rbAt.setOnCheckedChangeListener { _, checked -> if (checked) showPing(!checked) }
@@ -159,10 +165,17 @@ class MainActivity : AppCompatActivity() {
             if (!decodedPdus.add(pdu)) continue
             val k = PduCodec.decode(pdu)
             if (!k.er) continue
-            tvDecode.append(
-                "PING CMGS: ${k.mr}\nĐến SĐT ${k.sdtDcPing}\n" +
-                    "SMSC nhận: ${k.tPing}; phát: ${k.tReport}\nKết quả: ${k.kq}\n\n"
-            )
+
+            val online = k.kqSms == "SDT PING ONLINE."
+            // Dòng thông báo lớn: kết quả vừa có (khỏi cuộn)
+            tvLatest.text = if (online) "📶 ${k.sdtDcPing} : ONLINE" else "⛔ ${k.sdtDcPing} : OFFLINE"
+            tvLatest.setTextColor(if (online) Color.rgb(0, 150, 0) else Color.RED)
+
+            // Lịch sử: mới nhất lên ĐẦU
+            val line = "${k.sdtDcPing} : ${if (online) "ONLINE" else "OFFLINE"}" +
+                "  (${k.kq})\n   PING ${k.mr} | nhận ${k.tPing} | phát ${k.tReport}\n\n"
+            tvDecode.text = line + tvDecode.text
+            tvDecode.scrollTo(0, 0)
         }
     }
 
