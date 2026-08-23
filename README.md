@@ -1,22 +1,38 @@
-# SmsPing OTG (bản Android - SIM7600G-H qua USB-OTG)
+# SmsPing OTG (Android) — bản khớp giao diện & chức năng PING của bản PC
 
-## Cách build APK từ điện thoại (giống pipeline com.pingsim)
-1. Tạo repo mới trên GitHub (hoặc dùng lại repo cũ), upload toàn bộ thư mục này lên (dùng giao diện web GitHub: **Add file > Upload files**, kéo thả cả cây thư mục).
-2. Vào tab **Actions** của repo → workflow "Build APK" sẽ tự chạy (hoặc bấm **Run workflow** để chạy tay).
-3. Đợi build xong (vài phút) → vào job vừa chạy → mục **Artifacts** → tải file `SmsPingOtg-debug-apk`.
-4. Giải nén ra được `app-debug.apk` → cài vào điện thoại (nhớ bật "Cài từ nguồn không xác định").
+Ứng dụng PING SMS qua modem SIM cắm vào điện thoại bằng **OTG**. Dựng lại từ APK gốc:
+**giữ nguyên phần kết nối OTG**, nâng giao diện + chức năng PING theo bản PC đã chạy ổn định.
 
-## Cách dùng
-1. Cắm cáp OTG → cắm modem SIM7600G-H vào điện thoại.
-2. Mở app → bấm **Quét** để tìm modem → chọn trong danh sách → bấm **Connect** → Android sẽ hỏi cấp quyền USB, chọn **OK**.
-3. App sẽ tự kiểm tra IMEI modem (danh sách được phép dùng, giống bản laptop) rồi mới cho phép PING.
-4. Các chức năng còn lại y hệt bản laptop: PING SMS, tự động báo khi SDT online lại, AT Command thủ công, Decode, Check Hardware, Check TK SIM.
+## Đã có gì
 
-## Vì sao không dùng PWABuilder
-Android Chrome hỗ trợ WebUSB nhưng **không hỗ trợ Web Serial API** (do bản thân Android không cung cấp API serial chuẩn cho trình duyệt). Muốn giao tiếp AT command qua PWA sẽ phải tự viết toàn bộ giao thức USB CDC-ACM bằng JavaScript — phức tạp và dễ lỗi hơn nhiều so với dùng thư viện `usb-serial-for-android` có sẵn trong app native này.
+- **OTG giữ nguyên** (`UsbAtManager.kt`): USB Host API thô, bulk transfer, lọc modem theo
+  VID `0x1E0E`/`0x05C6` (SIM7600/Qualcomm) — đúng như bản gốc.
+- **PING đã sửa như bản PC** (`PduCodec.kt` + `MainActivity.kt`):
+  - Nhét địa chỉ **SMSC thẳng vào PDU** -> hết lỗi `SMSC address unknown`.
+  - Khi Connect: tự nhận nhà mạng theo IMSI (Mobifone/Vinaphone/Viettel/Vietnamobile/Gmobile),
+    dọn bộ nhớ SMS (chống `Memory full`), đặt chế độ mạng tự động.
+  - **Tự giải mã báo cáo +CDS** -> hiện ngay ONLINE/OFFLINE ở khung KẾT QUẢ.
+  - Nút **Kiểm tra TK**: USSD `*101#` (có thử lại), tự chuyển SMS `TK`→191 nếu là **Viettel**.
+- Giao diện giống PC: Quét/Kết nối, chọn PING hoặc AT Command, ô nhập số + nút PING SMS,
+  khung RAW CODE và khung KẾT QUẢ.
 
-## File quan trọng
-- `MainActivity.kt` — toàn bộ logic nghiệp vụ (port từ `frmMain.cs` bản laptop).
-- `UsbAtManager.kt` — quản lý kết nối/gửi/nhận qua USB-OTG.
-- `PduCodec.kt` — mã hóa/giải mã PDU + bảng tra mã lỗi (logic giống hệt bản laptop).
-- `device_filter.xml` — nhận diện modem SIM7600 theo Vendor ID khi cắm OTG.
+## Build ra APK bằng GitHub Actions
+
+1. Đẩy toàn bộ thư mục này lên GitHub (nhánh `main`).
+2. Vào tab **Actions** -> workflow **Build APK** chạy tự động (hoặc **Run workflow**).
+3. Tải **Artifacts -> app-debug** (file `app-debug.apk`), cài lên điện thoại
+   (bật "Cài từ nguồn không xác định").
+
+Workflow tự tạo Gradle wrapper trên máy chủ (tránh lỗi gradle-wrapper.jar hỏng).
+
+## Dùng trên điện thoại
+
+Cắm modem SIM qua cáp OTG -> mở app -> **Quét** -> chọn đúng Interface có cổng dữ liệu
+-> **Kết nối** (cấp quyền USB) -> nhập số cần PING (10 số, bắt đầu 0) -> **PING SMS**.
+Kết quả online/offline hiện ở khung KẾT QUẢ khi báo cáo về.
+
+## Ghi chú
+
+- Nếu chọn Interface không đúng, app báo "không có endpoint bulk", thử Interface khác.
+- Danh sách IMEI hợp lệ nằm ở `allowedImei` trong `MainActivity.kt` (giữ như bản PC).
+  Thêm IMEI modem mới vào đó nếu muốn dùng máy khác.
