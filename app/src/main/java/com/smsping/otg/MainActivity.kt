@@ -1,9 +1,11 @@
 package com.smsping.otg
 
 import android.graphics.Color
+import android.graphics.Typeface
 import android.hardware.usb.UsbDevice
 import android.os.Bundle
 import android.text.method.ScrollingMovementMethod
+import android.view.Gravity
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.CheckBox
@@ -89,7 +91,20 @@ class MainActivity : AppCompatActivity() {
         btnClr = findViewById(R.id.btnClr)
         tvRaw = findViewById(R.id.tvRaw)
         tvDecode = findViewById(R.id.tvDecode)
-        tvLatest = findViewById(R.id.tvLatest)
+        // Tạo dòng thông báo kết quả bằng code (không cần sửa layout) — chèn ngay trên khung KẾT QUẢ
+        tvLatest = TextView(this).apply {
+            textSize = 20f
+            setTypeface(null, Typeface.BOLD)
+            gravity = Gravity.CENTER
+            setPadding(20, 24, 20, 24)
+            setBackgroundColor(Color.rgb(238, 238, 238))
+            setTextColor(Color.rgb(85, 85, 85))
+            text = "Chưa có kết quả PING"
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+        (tvDecode.parent as? LinearLayout)?.let { p -> p.addView(tvLatest, p.indexOfChild(tvDecode)) }
         tvRaw.movementMethod = ScrollingMovementMethod()
         tvDecode.movementMethod = ScrollingMovementMethod()
 
