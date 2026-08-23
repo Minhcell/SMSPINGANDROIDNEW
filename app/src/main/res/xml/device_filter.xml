@@ -1,7 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- SIMCom (SIM7600 series) vendor ID = 0x1e0e (7694). -->
     <usb-device vendor-id="7694" />
-    <!-- Dự phòng: một số bản SIM7600 OEM dùng VID Qualcomm 0x05c6 (1478) -->
     <usb-device vendor-id="1478" />
 </resources>
