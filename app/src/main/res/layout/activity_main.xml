@@ -1,143 +1,174 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:app="http://schemas.android.com/apk/res-auto"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#F4F6F8">
+    android:orientation="vertical"
+    android:padding="10dp">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="12dp">
-
-        <TextView
-            android:layout_width="match_parent"
+        android:orientation="horizontal">
+        <Spinner
+            android:id="@+id/spDevices"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:text="SmsPing — OTG (SIM7600G-H)"
-            android:textSize="18sp"
-            android:textStyle="bold"
-            android:textColor="#0D47A1"
-            android:paddingBottom="8dp" />
-
-        <!-- KẾT NỐI -->
-        <com.google.android.material.card.MaterialCardView
-            style="@style/SectionCard">
-            <LinearLayout android:orientation="vertical" android:padding="12dp"
-                android:layout_width="match_parent" android:layout_height="wrap_content">
-                <TextView style="@style/SectionTitle" android:text="Kết nối modem USB-OTG" />
-                <LinearLayout android:orientation="horizontal" android:layout_width="match_parent"
-                    android:layout_height="wrap_content" android:layout_marginTop="6dp">
-                    <Spinner android:id="@+id/spDevices" android:layout_width="0dp"
-                        android:layout_height="wrap_content" android:layout_weight="1" />
-                    <Button android:id="@+id/btnScan" android:text="Quét" android:layout_width="wrap_content"
-                        android:layout_height="wrap_content" />
-                </LinearLayout>
-                <Button android:id="@+id/btnDebugUsb" android:text="Debug USB (xem VID/PID thật)"
-                    android:layout_width="match_parent" android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp" android:textSize="12sp" />
-                <LinearLayout android:orientation="horizontal" android:layout_width="match_parent"
-                    android:layout_height="wrap_content" android:layout_marginTop="6dp">
-                    <Button android:id="@+id/btnConnect" android:text="Connect" android:layout_width="0dp"
-                        android:layout_weight="1" android:layout_height="wrap_content" />
-                    <Button android:id="@+id/btnDisconnect" android:text="Disconnect" android:layout_width="0dp"
-                        android:layout_weight="1" android:layout_height="wrap_content" android:enabled="false" />
-                </LinearLayout>
-                <TextView android:id="@+id/lbStatus" android:text="Chưa kết nối" android:textColor="#D32F2F"
-                    android:layout_width="wrap_content" android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp" android:textStyle="bold" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- CHẾ ĐỘ -->
-        <com.google.android.material.card.MaterialCardView style="@style/SectionCard">
-            <LinearLayout android:orientation="vertical" android:padding="12dp"
-                android:layout_width="match_parent" android:layout_height="wrap_content">
-                <TextView style="@style/SectionTitle" android:text="Chọn chế độ lệnh SEND" />
-                <RadioGroup android:id="@+id/rgMode" android:orientation="horizontal"
-                    android:layout_width="match_parent" android:layout_height="wrap_content">
-                    <RadioButton android:id="@+id/rbPing" android:text="PING SMS" android:checked="true" />
-                    <RadioButton android:id="@+id/rbAt" android:text="AT Command" android:layout_marginStart="16dp" />
-                </RadioGroup>
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- PING SMS -->
-        <com.google.android.material.card.MaterialCardView android:id="@+id/cardPing" style="@style/SectionCard">
-            <LinearLayout android:orientation="vertical" android:padding="12dp"
-                android:layout_width="match_parent" android:layout_height="wrap_content">
-                <TextView style="@style/SectionTitle" android:text="PING số điện thoại" />
-                <EditText android:id="@+id/etTarget" android:hint="SĐT cần PING (VD: 0913123456)"
-                    android:inputType="phone" android:layout_width="match_parent"
-                    android:layout_height="wrap_content" />
-                <CheckBox android:id="@+id/ckbBao" android:text="Có yêu cầu báo khi SĐT online lại"
-                    android:layout_width="match_parent" android:layout_height="wrap_content" />
-                <EditText android:id="@+id/etNotify" android:hint="SĐT của bạn nhận báo (VD: 0913123456)"
-                    android:inputType="phone" android:enabled="false" android:layout_width="match_parent"
-                    android:layout_height="wrap_content" />
-                <Button android:id="@+id/btnSend" android:text="GỬI PING" android:layout_width="match_parent"
-                    android:layout_height="wrap_content" android:layout_marginTop="6dp" />
-                <Button android:id="@+id/btnXoaBao" android:text="Xoá mọi yêu cầu báo"
-                    android:layout_width="match_parent" android:layout_height="wrap_content" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- AT COMMAND -->
-        <com.google.android.material.card.MaterialCardView android:id="@+id/cardAt" style="@style/SectionCard"
-            android:visibility="gone">
-            <LinearLayout android:orientation="vertical" android:padding="12dp"
-                android:layout_width="match_parent" android:layout_height="wrap_content">
-                <TextView style="@style/SectionTitle" android:text="Nhập lệnh AT Command" />
-                <EditText android:id="@+id/etAt" android:hint="VD: AT+CSQ" android:layout_width="match_parent"
-                    android:layout_height="wrap_content" />
-                <CheckBox android:id="@+id/ckbCr" android:text="+CR" android:checked="true"
-                    android:layout_width="wrap_content" android:layout_height="wrap_content" />
-                <Button android:id="@+id/btnSendAt" android:text="SEND AT" android:layout_width="match_parent"
-                    android:layout_height="wrap_content" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- RAW / DECODE -->
-        <com.google.android.material.card.MaterialCardView style="@style/SectionCard">
-            <LinearLayout android:orientation="vertical" android:padding="12dp"
-                android:layout_width="match_parent" android:layout_height="wrap_content">
-                <TextView style="@style/SectionTitle" android:text="RAW CODE (chạm-giữ để chọn đoạn text rồi bấm DECODE)" />
-                <EditText android:id="@+id/etRaw" android:layout_width="match_parent" android:layout_height="150dp"
-                    android:gravity="top" android:inputType="textMultiLine" android:scrollbars="vertical" />
-                <TextView style="@style/SectionTitle" android:text="DECODE" android:layout_marginTop="8dp" />
-                <TextView android:id="@+id/tvDecode" android:layout_width="match_parent" android:layout_height="180dp"
-                    android:background="#FFFFFF" android:padding="6dp" android:scrollbars="vertical" />
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
-        <!-- TOOL -->
-        <com.google.android.material.card.MaterialCardView style="@style/SectionCard">
-            <LinearLayout android:orientation="vertical" android:padding="12dp"
-                android:layout_width="match_parent" android:layout_height="wrap_content">
-                <TextView style="@style/SectionTitle" android:text="Tool" />
-                <LinearLayout android:orientation="horizontal" android:layout_width="match_parent"
-                    android:layout_height="wrap_content">
-                    <Button android:id="@+id/btnChkHard" android:text="Check HW" android:layout_width="0dp"
-                        android:layout_weight="1" android:layout_height="wrap_content" />
-                    <Button android:id="@+id/btnTk" android:text="Check TK SIM" android:layout_width="0dp"
-                        android:layout_weight="1" android:layout_height="wrap_content" />
-                </LinearLayout>
-                <LinearLayout android:orientation="horizontal" android:layout_width="match_parent"
-                    android:layout_height="wrap_content">
-                    <Button android:id="@+id/btnDecode" android:text="DECODE" android:layout_width="0dp"
-                        android:layout_weight="1" android:layout_height="wrap_content" />
-                    <Button android:id="@+id/btnClr" android:text="CLEAR" android:layout_width="0dp"
-                        android:layout_weight="1" android:layout_height="wrap_content" />
-                </LinearLayout>
-                <LinearLayout android:orientation="horizontal" android:layout_width="match_parent"
-                    android:layout_height="wrap_content">
-                    <Button android:id="@+id/btnHelp" android:text="Help" android:layout_width="0dp"
-                        android:layout_weight="1" android:layout_height="wrap_content" />
-                    <Button android:id="@+id/btnAbout" android:text="About" android:layout_width="0dp"
-                        android:layout_weight="1" android:layout_height="wrap_content" />
-                </LinearLayout>
-            </LinearLayout>
-        </com.google.android.material.card.MaterialCardView>
-
+            android:layout_weight="1" />
+        <Button
+            android:id="@+id/btnScan"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Quét" />
     </LinearLayout>
-</ScrollView>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+        <Button
+            android:id="@+id/btnConnect"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Kết nối" />
+        <Button
+            android:id="@+id/btnDisconnect"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Ngắt" />
+        <TextView
+            android:id="@+id/lbStatus"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:paddingStart="8dp"
+            android:text="Chưa kết nối"
+            android:textColor="#D00000"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <RadioGroup
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <RadioButton
+            android:id="@+id/rbPing"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="PING" />
+        <RadioButton
+            android:id="@+id/rbAt"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:text="AT Command" />
+    </RadioGroup>
+
+    <LinearLayout
+        android:id="@+id/layoutPing"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <EditText
+            android:id="@+id/etTarget"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="SĐT 10 số, bắt đầu 0"
+            android:inputType="phone" />
+        <Button
+            android:id="@+id/btnPing"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="PING SMS" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/layoutAt"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:visibility="gone">
+        <EditText
+            android:id="@+id/etAt"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="Lệnh AT"
+            android:inputType="textNoSuggestions" />
+        <CheckBox
+            android:id="@+id/cbCr"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="CR" />
+        <Button
+            android:id="@+id/btnSendAt"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Gửi" />
+        <Button
+            android:id="@+id/btnCtrlZ"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="^Z" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+        <Button
+            android:id="@+id/btnAccount"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Kiểm tra TK" />
+        <Button
+            android:id="@+id/btnSignal"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Sóng" />
+        <Button
+            android:id="@+id/btnClr"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Xóa" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="4dp"
+        android:text="RAW CODE:"
+        android:textStyle="bold" />
+    <TextView
+        android:id="@+id/tvRaw"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="#111111"
+        android:fontFamily="monospace"
+        android:padding="6dp"
+        android:scrollbars="vertical"
+        android:textColor="#33FF66"
+        android:textSize="11sp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="4dp"
+        android:text="KẾT QUẢ:"
+        android:textStyle="bold" />
+    <TextView
+        android:id="@+id/tvDecode"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="#F2F2F2"
+        android:fontFamily="monospace"
+        android:padding="6dp"
+        android:scrollbars="vertical"
+        android:textColor="#000000"
+        android:textSize="12sp" />
+
+</LinearLayout>
