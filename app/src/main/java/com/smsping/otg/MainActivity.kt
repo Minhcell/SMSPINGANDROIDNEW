@@ -1,511 +1,312 @@
 package com.smsping.otg
 
-import android.content.Intent
+import android.graphics.Color
 import android.hardware.usb.UsbDevice
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.text.SpannableStringBuilder
-import android.view.View
-import android.widget.*
+import android.text.method.ScrollingMovementMethod
+import android.widget.ArrayAdapter
+import android.widget.Button
+import android.widget.CheckBox
+import android.widget.EditText
+import android.widget.LinearLayout
+import android.widget.RadioButton
+import android.widget.Spinner
+import android.widget.TextView
+import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
-    // ---- Danh sách IMEI thiết bị được phép dùng app (giữ nguyên như bản laptop) ----
-    private val allowedImeiList = listOf(
+    private lateinit var usb: UsbAtManager
+
+    private lateinit var spDevices: Spinner
+    private lateinit var btnScan: Button
+    private lateinit var btnConnect: Button
+    private lateinit var btnDisconnect: Button
+    private lateinit var lbStatus: TextView
+    private lateinit var rbPing: RadioButton
+    private lateinit var rbAt: RadioButton
+    private lateinit var layoutPing: LinearLayout
+    private lateinit var layoutAt: LinearLayout
+    private lateinit var etTarget: EditText
+    private lateinit var btnPing: Button
+    private lateinit var etAt: EditText
+    private lateinit var cbCr: CheckBox
+    private lateinit var btnSendAt: Button
+    private lateinit var btnCtrlZ: Button
+    private lateinit var btnAccount: Button
+    private lateinit var btnSignal: Button
+    private lateinit var btnClr: Button
+    private lateinit var tvRaw: TextView
+    private lateinit var tvDecode: TextView
+
+    private var portEntries: List<Pair<UsbDevice, Int>> = emptyList()
+
+    // ---- Bảng SMSC theo nhà mạng (MCC 452): 01 Mobi/02 Vina/04 Viettel/05 Vietnamobile/07 Gmobile ----
+    private val smscByNetwork = mapOf(
+        "01" to "+84900000023", "02" to "+8491020005", "04" to "+84980200030",
+        "05" to "+84925252525", "07" to "+84995252525"
+    )
+    private val allowedImei = listOf(
         "862636051970828", "862636051979746", "862636054171572", "862636054064009",
         "862636054182835", "862636054166416", "866506050985885", "862636056523887",
         "862636057265306"
     )
 
-    private lateinit var usb: UsbAtManager
-    private val handler = Handler(Looper.getMainLooper())
+    private var smscPduPrefix = "00"
 
-    private var devices: List<UsbDevice> = emptyList()
-    private var myImei = ""
-    private var flagCheckImei = false
-    private var strDocKq = ""
-    private val canBao = mutableListOf<DauVao>()
-    private var pingOk = 0
-
-    // views
-    private lateinit var spDevices: Spinner
-    private lateinit var btnScan: Button
-    private lateinit var btnDebugUsb: Button
-    private lateinit var btnConnect: Button
-    private lateinit var btnDisconnect: Button
-    private lateinit var lbStatus: TextView
-    private lateinit var rgMode: RadioGroup
-    private lateinit var cardPing: View
-    private lateinit var cardAt: View
-    private lateinit var etTarget: EditText
-    private lateinit var ckbBao: CheckBox
-    private lateinit var etNotify: EditText
-    private lateinit var btnSend: Button
-    private lateinit var btnXoaBao: Button
-    private lateinit var etAt: EditText
-    private lateinit var ckbCr: CheckBox
-    private lateinit var btnSendAt: Button
-    private lateinit var etRaw: EditText
-    private lateinit var tvDecode: TextView
-    private lateinit var btnChkHard: Button
-    private lateinit var btnTk: Button
-    private lateinit var btnDecode: Button
-    private lateinit var btnClr: Button
-    private lateinit var btnHelp: Button
-    private lateinit var btnAbout: Button
+    // Buffer nhận liên tục (dùng cho query + tự giải mã +CDS)
+    private val rxLock = Any()
+    private val rxBuf = StringBuilder()
+    private val decodedPdus = HashSet<String>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-        bindViews()
-        usb = UsbAtManager(this, ::onDataReceived, ::onUsbStatusChanged)
+
+        spDevices = findViewById(R.id.spDevices)
+        btnScan = findViewById(R.id.btnScan)
+        btnConnect = findViewById(R.id.btnConnect)
+        btnDisconnect = findViewById(R.id.btnDisconnect)
+        lbStatus = findViewById(R.id.lbStatus)
+        rbPing = findViewById(R.id.rbPing)
+        rbAt = findViewById(R.id.rbAt)
+        layoutPing = findViewById(R.id.layoutPing)
+        layoutAt = findViewById(R.id.layoutAt)
+        etTarget = findViewById(R.id.etTarget)
+        btnPing = findViewById(R.id.btnPing)
+        etAt = findViewById(R.id.etAt)
+        cbCr = findViewById(R.id.cbCr)
+        btnSendAt = findViewById(R.id.btnSendAt)
+        btnCtrlZ = findViewById(R.id.btnCtrlZ)
+        btnAccount = findViewById(R.id.btnAccount)
+        btnSignal = findViewById(R.id.btnSignal)
+        btnClr = findViewById(R.id.btnClr)
+        tvRaw = findViewById(R.id.tvRaw)
+        tvDecode = findViewById(R.id.tvDecode)
+        tvRaw.movementMethod = ScrollingMovementMethod()
+        tvDecode.movementMethod = ScrollingMovementMethod()
+
+        usb = UsbAtManager(this, ::onData, ::onStatus)
         usb.register()
-        scanDevices()
-        wireEvents()
-    }
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
-        // App đã mở sẵn, vừa có thiết bị USB mới được cắm vào -> tự quét lại danh sách modem
-        if (intent.action == android.hardware.usb.UsbManager.ACTION_USB_DEVICE_ATTACHED) {
-            scanDevices()
-            toast("Đã phát hiện thiết bị USB mới, đã quét lại danh sách")
+        btnScan.setOnClickListener { scanDevices() }
+        btnConnect.setOnClickListener { onConnectClick() }
+        btnDisconnect.setOnClickListener { usb.disconnect() }
+        btnPing.setOnClickListener { onPing() }
+        btnSendAt.setOnClickListener {
+            if (!usb.isOpen) { toast("Kết nối trước đã"); return@setOnClickListener }
+            usb.write(if (cbCr.isChecked) etAt.text.toString() + "\r" else etAt.text.toString())
         }
-    }
+        btnCtrlZ.setOnClickListener { if (usb.isOpen) usb.write("\u001a") }
+        btnAccount.setOnClickListener { onAccount() }
+        btnSignal.setOnClickListener {
+            if (usb.isOpen) lifecycleScope.launch(Dispatchers.IO) {
+                query("AT\r\n", 400, "OK"); query("AT+CSQ\r\n", 800, "\\+CSQ")
+            }
+        }
+        btnClr.setOnClickListener { tvRaw.text = ""; tvDecode.text = ""; synchronized(rxLock) { rxBuf.setLength(0) }; decodedPdus.clear() }
 
-    override fun onResume() {
-        super.onResume()
-        // Phòng trường hợp cắm modem khi app đang chạy nền, quét lại mỗi khi quay lại màn hình app
+        rbPing.setOnCheckedChangeListener { _, checked -> if (checked) showPing(true) }
+        rbAt.setOnCheckedChangeListener { _, checked -> if (checked) showPing(!checked) }
+        rbPing.isChecked = true
+        cbCr.isChecked = true
+        setUiConnected(false)
         scanDevices()
     }
 
     override fun onDestroy() {
-        usb.disconnect()
-        usb.unregister()
         super.onDestroy()
+        try { usb.unregister() } catch (_: Throwable) {}
     }
 
-    private fun bindViews() {
-        spDevices = findViewById(R.id.spDevices)
-        btnScan = findViewById(R.id.btnScan)
-        btnDebugUsb = findViewById(R.id.btnDebugUsb)
-        btnConnect = findViewById(R.id.btnConnect)
-        btnDisconnect = findViewById(R.id.btnDisconnect)
-        lbStatus = findViewById(R.id.lbStatus)
-        rgMode = findViewById(R.id.rgMode)
-        cardPing = findViewById(R.id.cardPing)
-        cardAt = findViewById(R.id.cardAt)
-        etTarget = findViewById(R.id.etTarget)
-        ckbBao = findViewById(R.id.ckbBao)
-        etNotify = findViewById(R.id.etNotify)
-        btnSend = findViewById(R.id.btnSend)
-        btnXoaBao = findViewById(R.id.btnXoaBao)
-        etAt = findViewById(R.id.etAt)
-        ckbCr = findViewById(R.id.ckbCr)
-        btnSendAt = findViewById(R.id.btnSendAt)
-        etRaw = findViewById(R.id.etRaw)
-        tvDecode = findViewById(R.id.tvDecode)
-        tvDecode.movementMethod = android.text.method.ScrollingMovementMethod()
-        btnChkHard = findViewById(R.id.btnChkHard)
-        btnTk = findViewById(R.id.btnTk)
-        btnDecode = findViewById(R.id.btnDecode)
-        btnClr = findViewById(R.id.btnClr)
-        btnHelp = findViewById(R.id.btnHelp)
-        btnAbout = findViewById(R.id.btnAbout)
-        btnDisconnect.isEnabled = false
+    private fun showPing(ping: Boolean) {
+        layoutPing.visibility = if (ping) LinearLayout.VISIBLE else LinearLayout.GONE
+        layoutAt.visibility = if (ping) LinearLayout.GONE else LinearLayout.VISIBLE
     }
 
-    private fun wireEvents() {
-        btnScan.setOnClickListener { scanDevices() }
-        btnDebugUsb.setOnClickListener {
-            val list = usb.listAllRawDevices()
-            val text = if (list.isEmpty()) "Không có thiết bị USB nào đang cắm (kể cả không đúng loại modem)."
-                        else list.joinToString("\n\n")
-            androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("Danh sách USB đang cắm")
-                .setMessage(text)
-                .setPositiveButton("Đóng", null)
-                .show()
-        }
+    private fun toast(m: String) = Toast.makeText(this, m, Toast.LENGTH_SHORT).show()
 
-        btnConnect.setOnClickListener { onConnectClick() }
-        btnDisconnect.setOnClickListener { onDisconnectClick() }
+    private fun appendRaw(t: String) { tvRaw.append(t) }
 
-        rgMode.setOnCheckedChangeListener { _, checkedId ->
-            val pingMode = checkedId == R.id.rbPing
-            cardPing.visibility = if (pingMode) View.VISIBLE else View.GONE
-            cardAt.visibility = if (pingMode) View.GONE else View.VISIBLE
+    // ---------- Nhận dữ liệu từ modem ----------
+    private fun onData(text: String) {
+        synchronized(rxLock) {
+            rxBuf.append(text)
+            if (rxBuf.length > 16000) rxBuf.delete(0, rxBuf.length - 16000)
         }
-
-        ckbBao.setOnCheckedChangeListener { _, checked -> etNotify.isEnabled = checked }
-
-        btnSend.setOnClickListener { onSendPingClick() }
-        btnXoaBao.setOnClickListener { onXoaBaoClick() }
-        btnSendAt.setOnClickListener { onSendAtClick() }
-        btnChkHard.setOnClickListener { onCheckHardwareClick() }
-        btnTk.setOnClickListener { onCheckTkClick() }
-        btnDecode.setOnClickListener { onDecodeClick() }
-        btnClr.setOnClickListener {
-            etRaw.setText("")
-            tvDecode.text = ""
-        }
-        btnHelp.setOnClickListener {
-            val helpText = "- Với version OTG, bạn có thể PING cho một hoặc nhiều số ĐT đang tắt máy.\n" +
-                    "Thiết bị sẽ SMS báo cho bạn khi SĐT đó online trở lại.\n" +
-                    "- Trong khi chờ SMS báo hiệu, không được tắt app hoặc rút modem, không để điện thoại vào chế độ tiết kiệm pin diệt app nền.\n\n" +
-                    "--- LỆNH SET SMSC THEO NHÀ MẠNG (dùng khi đổi SIM báo lỗi SMSC) ---\n" +
-                    "Viettel: AT+CSCA=\"+84980200030\"\n" +
-                    "Vinaphone: AT+CSCA=\"+8491020005\"\n" +
-                    "Mobifone (Bắc): AT+CSCA=\"+84900000011\"\n" +
-                    "Mobifone (Trung): AT+CSCA=\"+84900000017\"\n" +
-                    "Mobifone (Nam): AT+CSCA=\"+84900000023\"\n" +
-                    "Vietnamobile: AT+CSCA=\"+84925252525\"\n" +
-                    "Gmobile: AT+CSCA=\"+84995252525\"\n\n" +
-                    "Nếu gặp lỗi 'Memory full': gửi AT+CMGD=1,4 để dọn bộ nhớ SIM."
-            androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("Trợ giúp")
-                .setMessage(helpText)
-                .setPositiveButton("Đóng", null)
-                .show()
-        }
-        btnAbout.setOnClickListener {
-            toast("Thiết bị do tác giả và PTH thực hiện.\nBản Android OTG - port từ bản Windows Forms.")
-        }
+        runOnUiThread { appendRaw(text); autoDecodeCds() }
     }
 
-    // ---------------- Quét & kết nối thiết bị USB ----------------
-
-    // Mỗi phần tử: (device, chỉ số interface thô) - ứng với 1 dòng trong danh sách chọn
-    private var portEntries: List<Pair<UsbDevice, Int>> = emptyList()
-
-    private fun scanDevices() {
-        devices = usb.findMatchingDevices()
-        val entries = mutableListOf<Pair<UsbDevice, Int>>()
-        val names = mutableListOf<String>()
-        for (device in devices) {
-            for (ifaceIndex in 0 until device.interfaceCount) {
-                entries.add(device to ifaceIndex)
-                names.add("${device.deviceName} - Interface $ifaceIndex / ${device.interfaceCount} (VID ${device.vendorId})")
-            }
-        }
-        portEntries = entries
-        val displayNames = names.ifEmpty { listOf("Không tìm thấy thiết bị") }
-        spDevices.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, displayNames)
-    }
-
-    private fun onConnectClick() {
-        val entry = portEntries.getOrNull(spDevices.selectedItemPosition)
-        if (entry == null) {
-            toast("Không tìm thấy modem. Hãy cắm SIM7600G-H qua OTG rồi bấm Quét")
-            return
-        }
-        val (device, ifaceIndex) = entry
-        lbStatus.text = "Đang kết nối interface $ifaceIndex..."
-        lbStatus.setTextColor(0xFFDD6B00.toInt())
-        usb.connect(device, ifaceIndex) { success, message ->
-            if (!success) {
-                toast("$message\nThử chọn interface khác trong danh sách rồi bấm Connect lại.")
-                setUiConnected(false)
-                return@connect
-            }
-            myImei = ""
-            flagCheckImei = true
-            usb.write("AT\r\n")
-            handler.postDelayed({ checkModemAlive(0) }, 500)
-        }
-    }
-
-    /** Tương ứng vòng lặp gửi "AT" chờ "OK" trong btnConnect_Click bản gốc. */
-    private fun checkModemAlive(attempt: Int) {
-        if (myImei.contains("OK") || attempt >= 10) {
-            usb.write("AT+CGSN\r\n")
-            handler.postDelayed({ waitForImei(0) }, 500)
-            return
-        }
-        usb.write("AT\r\n")
-        handler.postDelayed({ checkModemAlive(attempt + 1) }, 1500)
-    }
-
-    /** Chờ và thử lại tối đa ~3 giây cho tới khi nhận đủ 15 chữ số IMEI (modem qua USB có thể trả lời chậm). */
-    private fun waitForImei(attempt: Int) {
-        val hasImei = Regex("\\d{15}").containsMatchIn(myImei)
-        if (hasImei || attempt >= 6) {
-            checkImei()
-            return
-        }
-        handler.postDelayed({ waitForImei(attempt + 1) }, 500)
-    }
-
-    // SMSC mặc định theo từng nhà mạng Việt Nam (dùng khi SIM chưa có sẵn SMSC được lưu)
-    private val smscByNetwork = mapOf(
-        "01" to "+84900000023", // Mobifone
-        "02" to "+8491020005",  // Vinaphone
-        "04" to "+84980200030"  // Viettel
-    )
-
-    private fun extractCurrentSmsc(data: String): String =
-        Regex("\\+CSCA:\\s*\"([^\"]*)\"").find(data)?.groupValues?.get(1) ?: ""
-
-    private fun detectSmscByNetwork(data: String): String? {
-        val m = Regex("452-0(\\d)").find(data) ?: return null
-        val mnc = m.groupValues[1].padStart(2, '0')
-        return smscByNetwork[mnc]
-    }
-
-    /** Tương ứng TimerImei_Tick bản gốc: kiểm tra IMEI modem có trong danh sách cho phép không. */
-    private fun checkImei() {
-        // Không dựa vào việc modem có echo lại lệnh hay không (ATE0/ATE1),
-        // mà tìm trực tiếp dãy 15 chữ số liên tiếp (đúng độ dài chuẩn IMEI) trong dữ liệu nhận về.
-        val match = Regex("\\d{15}").find(myImei)
-        if (match != null) {
-            val imei = match.value
-            if (!allowedImeiList.contains(imei)) {
-                toast("Thiết bị của bạn chưa được đăng ký sử dụng với tác giả.\nVui lòng liên hệ tác giả!")
-                usb.disconnect()
-                setUiConnected(false)
-                flagCheckImei = false
-                return
-            }
-        } else {
-            toast("Cổng USB chưa nhận được thiết bị! Thử kết nối lại.")
-            usb.disconnect()
-            setUiConnected(false)
-            flagCheckImei = false
-            return
-        }
-        usb.write("AT+CNMP=38\r\n")
-        handler.postDelayed({
-            // Dọn sạch bộ nhớ SMS/report cũ trên SIM, tránh lỗi "Memory full" sau nhiều lần PING
-            usb.write("AT+CMGD=1,4\r\n")
-            handler.postDelayed({
-                usb.write("AT+CSCA?\r\n")
-                handler.postDelayed({
-                    val currentSmsc = extractCurrentSmsc(myImei)
-                    usb.write("AT+CPSI?\r\n")
-                    handler.postDelayed({
-                        if (currentSmsc.isEmpty()) {
-                            val autoSmsc = detectSmscByNetwork(myImei)
-                            if (autoSmsc != null) {
-                                usb.write("AT+CSCA=\"$autoSmsc\"\r\n")
-                            } else {
-                                toast("Không tự nhận diện được nhà mạng để set SMSC.\nVào chế độ AT Command, gửi: AT+CSCA=\"số SMSC nhà mạng\" trước khi PING.")
-                            }
-                        }
-                        usb.write("AT+CNMI=1,0,0,1,0\r\n")
-                        usb.write("AT+CLIP=1\r\n")
-                        flagCheckImei = false
-                        setUiConnected(true)
-                    }, 500)
-                }, 300)
-            }, 1000)
-        }, 300)
-    }
-
-    private fun onDisconnectClick() {
-        usb.disconnect()
-        setUiConnected(false)
-    }
+    private fun onStatus(connected: Boolean) = runOnUiThread { setUiConnected(connected) }
 
     private fun setUiConnected(connected: Boolean) {
         btnConnect.isEnabled = !connected
         btnDisconnect.isEnabled = connected
         lbStatus.text = if (connected) "Đã kết nối" else "Chưa kết nối"
-        lbStatus.setTextColor(if (connected) 0xFF2E7D32.toInt() else 0xFFD32F2F.toInt())
+        lbStatus.setTextColor(if (connected) Color.rgb(0, 150, 0) else Color.RED)
     }
 
-    private fun onUsbStatusChanged(connected: Boolean) {
-        runOnUiThread { if (!connected) setUiConnected(false) }
-    }
-
-    // ---------------- Nhận dữ liệu từ modem ----------------
-
-    private fun onDataReceived(text: String) {
-        runOnUiThread {
-            etRaw.append(text)
-            etRaw.setSelection(etRaw.text.length)
-            if (canBao.isNotEmpty()) strDocKq += text
-            if (flagCheckImei) myImei += text
+    private fun autoDecodeCds() {
+        val snapshot = synchronized(rxLock) { rxBuf.toString() }
+        val re = Regex("\\+CDS:\\s*\\d+\\s*([0-9A-Fa-f]{40,})")
+        for (m in re.findAll(snapshot)) {
+            val pdu = m.groupValues[1]
+            if (!decodedPdus.add(pdu)) continue
+            val k = PduCodec.decode(pdu)
+            if (!k.er) continue
+            tvDecode.append(
+                "PING CMGS: ${k.mr}\nĐến SĐT ${k.sdtDcPing}\n" +
+                    "SMSC nhận: ${k.tPing}; phát: ${k.tReport}\nKết quả: ${k.kq}\n\n"
+            )
         }
     }
 
-    // ---------------- Gửi PDU ----------------
-
-    private fun senPdu(pdu: String) {
-        usb.write("AT+CMGF=0\r\n")
-        handler.postDelayed({
-            usb.write("AT+CMGS=19\r\n")
-            handler.postDelayed({
-                usb.write(pdu)
-                handler.postDelayed({ usb.write("\u001a") }, 200)
-            }, 300)
-        }, 200)
-    }
-
-    private fun validPhone(sdt: String): Boolean =
-        sdt.length >= 10 && sdt.all { it.isDigit() } && sdt[0] == '0'
-
-    private fun onSendPingClick() {
-        if (!usb.isOpen) { toast("Connect modem trước khi sử dụng lệnh"); return }
-        val sdt = etTarget.text.toString()
-        if (!validPhone(sdt)) { toast("Kiểm tra lại định dạng SĐT cần PING (10 số, bắt đầu bằng 0)"); return }
-
-        if (!ckbBao.isChecked) {
-            senPdu(PduCodec.buildPingPdu(sdt))
-            toast("Đã gửi PING tới $sdt")
-            return
-        }
-
-        val notifyNumber = etNotify.text.toString()
-        if (!validPhone(notifyNumber)) { toast("Kiểm tra lại định dạng SĐT của bạn (10 số, bắt đầu bằng 0)"); return }
-        if (sdt == notifyNumber) { toast("SĐT cần PING trùng SĐT nhận báo. Nhập lại."); return }
-
-        val entry = DauVao(
-            strCmgs = "",
-            sdtCanPing = sdt,
-            sdtCanPingDao = PduCodec.swapDigits(sdt),
-            sdtTrs = "+84" + notifyNumber.substring(1)
-        )
-        canBao.add(entry)
-        strDocKq = ""
-        senPdu(PduCodec.buildPingPdu(sdt))
-        pingOk = 0
-        ckbBao.isChecked = false
-        handler.postDelayed({ checkPingSubmitted() }, 1500)
-    }
-
-    /** Tương ứng TimerPINGOK_Tick: kiểm tra xem lệnh submit PDU đã OK/ERROR chưa. */
-    private fun checkPingSubmitted() {
-        if (canBao.isEmpty()) return
-        pingOk++
-        val last = canBao.last()
-        val marker = "00B1000B9148" + last.sdtCanPingDao + "4000AA03201008"
-        val posSubmit = strDocKq.indexOf(marker)
-        if (posSubmit < 0) {
-            toast("Chưa xác nhận được PING, đang thử lại...")
-            if (pingOk < 5) handler.postDelayed({ checkPingSubmitted() }, 1500) else canBao.removeAt(canBao.size - 1)
-            return
-        }
-        val tail = strDocKq.substring(posSubmit)
-        when {
-            tail.contains("ERROR") -> {
-                toast("Cuộc PING của bạn bị lỗi")
-                canBao.removeAt(canBao.size - 1)
+    // ---------- Quét & kết nối ----------
+    private fun scanDevices() {
+        val entries = ArrayList<Pair<UsbDevice, Int>>()
+        val names = ArrayList<String>()
+        for (device in usb.findMatchingDevices()) {
+            for (i in 0 until device.interfaceCount) {
+                entries.add(device to i)
+                names.add("${device.deviceName} - Interface $i/${device.interfaceCount} (VID ${device.vendorId})")
             }
-            tail.contains("OK") -> {
-                val cmgsIdx = strDocKq.indexOf("CMGS: ")
-                if (cmgsIdx >= 0) {
-                    val endIdx = strDocKq.indexOf("\r\n", cmgsIdx).let { if (it < 0) strDocKq.length else it }
-                    last.strCmgs = strDocKq.substring(cmgsIdx + 6, endIdx)
-                }
-                toast("Đã PING số ${last.sdtCanPing} thành công. Đang chờ SĐT online lại để báo cho ${last.sdtTrs}")
-                handler.postDelayed({ pollForReport() }, 5000)
-            }
-            pingOk < 5 -> handler.postDelayed({ checkPingSubmitted() }, 1500)
-            else -> {
-                toast("Đã xảy ra lỗi, hãy kiểm tra lại trong RAW CODE")
-                canBao.removeAt(canBao.size - 1)
+        }
+        portEntries = entries
+        val display = if (names.isEmpty()) listOf("Không tìm thấy modem — cắm SIM7600 qua OTG") else names
+        spDevices.adapter = ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, display)
+    }
+
+    private fun onConnectClick() {
+        val entry = portEntries.getOrNull(spDevices.selectedItemPosition)
+        if (entry == null) { toast("Không tìm thấy modem. Cắm SIM7600 qua OTG rồi bấm Quét"); return }
+        lbStatus.text = "Đang kết nối interface ${entry.second}..."
+        lbStatus.setTextColor(Color.rgb(220, 140, 0))
+        usb.connect(entry.first, entry.second) { ok, msg ->
+            runOnUiThread {
+                if (ok) lifecycleScope.launch(Dispatchers.IO) { afterConnected() }
+                else { toast(msg); setUiConnected(false) }
             }
         }
     }
 
-    /** Tương ứng TimerChoKQ_Tick: định kỳ kiểm tra xem SMSC đã gửi report (CDS) chưa. */
-    private fun pollForReport() {
-        if (canBao.isEmpty()) return
-        if (strDocKq.isNotEmpty()) {
-            var catKetQua = ""
-            val cdsIdx = strDocKq.indexOf("CDS:")
-            if (cdsIdx >= 0) {
-                val i06 = strDocKq.indexOf("069148", cdsIdx)
-                val i07 = strDocKq.indexOf("079148", cdsIdx)
-                if (i06 >= 0) catKetQua = strDocKq.substring(i06, (i06 + 64).coerceAtMost(strDocKq.length))
-                else if (i07 >= 0) catKetQua = strDocKq.substring(i07, (i07 + 66).coerceAtMost(strDocKq.length))
+    // ---------- Sau khi mở cổng: đánh thức modem, IMEI, tự gắn SMSC ----------
+    private suspend fun afterConnected() {
+        var buf = query("AT\r\n", 1500, "OK")
+        var i = 0
+        while (i < 10 && !buf.contains("OK")) { buf = query("AT\r\n", 1500, "OK"); i++ }
+
+        val imeiResp = query("AT+CGSN\r\n", 2500, "\\d{15}")
+        val m = Regex("\\d{15}").find(imeiResp)
+        if (m == null) { runOnUiThread { toast("Không đọc được IMEI"); }; usb.disconnect(); return }
+        if (m.value !in allowedImei) { runOnUiThread { toast("Thiết bị không hợp lệ") }; usb.disconnect(); return }
+
+        // Chế độ mạng tự động (ping SMS + USSD đều chạy)
+        query("AT+CNMP=2\r\n", 1000, "OK")
+        // Dọn sạch bộ nhớ SMS (tránh Memory full)
+        for (mem in listOf("SM", "ME", "SR")) {
+            query("AT+CPMS=\"$mem\",\"$mem\",\"$mem\"\r\n", 600, "OK")
+            query("AT+CMGD=1,4\r\n", 1200, "OK")
+        }
+        query("AT+CPMS=\"ME\",\"ME\",\"ME\"\r\n", 600, "OK")
+
+        // Nhận diện nhà mạng theo IMSI -> nhét SMSC vào PDU
+        var smsc = detectSmsc(query("AT+CIMI\r\n", 2500, "\\d{15}"))
+        if (smsc == null) smsc = detectSmsc(query("AT+CPSI?\r\n", 2500, "452"))
+        if (smsc == null) smsc = detectSmsc(query("AT+COPS?\r\n", 2500, "452"))
+
+        if (smsc != null) {
+            smscPduPrefix = PduCodec.encodeSmscPrefix(smsc)
+            query("AT+CSCA=\"$smsc\",145\r\n", 800, "OK")
+        } else {
+            smscPduPrefix = "00"
+            runOnUiThread { toast("Chưa dò được nhà mạng của SIM — thử Connect lại") }
+        }
+        query("AT+CNMI=1,0,0,1,0\r\n", 500, "OK")
+        query("AT+CLIP=1\r\n", 400, "OK")
+        runOnUiThread { toast("Đã sẵn sàng PING") }
+    }
+
+    private fun detectSmsc(data: String?): String? {
+        val d = data ?: return null
+        val mnc = Regex("452[\\s\\-]*(0[1-9])").find(d)?.groupValues?.get(1) ?: return null
+        return smscByNetwork[mnc]
+    }
+
+    // ---------- PING ----------
+    private fun validPhone(sdt: String) = sdt.length >= 10 && sdt.all { it.isDigit() } && sdt[0] == '0'
+
+    private fun onPing() {
+        if (!usb.isOpen) { toast("Kết nối modem trước khi PING"); return }
+        val sdt = etTarget.text.toString().trim()
+        if (!validPhone(sdt)) { toast("SĐT phải 10 số và bắt đầu bằng 0"); return }
+        lifecycleScope.launch(Dispatchers.IO) {
+            val pdu = PduCodec.buildPingPdu(sdt, smscPduPrefix)
+            query("AT+CMGF=0\r\n", 600, "OK")
+            query("AT+CMGS=19\r\n", 1000, ">")
+            usb.write(pdu)
+            delay(300)
+            usb.write("\u001a")
+        }
+    }
+
+    // ---------- Kiểm tra tài khoản (tự chọn theo nhà mạng) ----------
+    private fun onAccount() {
+        if (!usb.isOpen) { toast("Kết nối modem trước"); return }
+        lifecycleScope.launch(Dispatchers.IO) {
+            val imsi = query("AT+CIMI\r\n", 2500, "\\d{15}")
+            val mnc = Regex("452(0[1-9])").find(imsi)?.groupValues?.get(1) ?: ""
+
+            query("AT+CREG=1\r\n", 500, "OK")
+            for (i in 0 until 12)
+                if (Regex("\\+CREG:\\s*\\d,\\s*[15]").containsMatchIn(query("AT+CREG?\r\n", 500, "\\+CREG:"))) break
+
+            // USSD *101# (dùng chung mọi nhà mạng) + giải phóng phiên cũ + thử lại
+            query("AT+CMGF=1\r\n", 500, "OK")
+            query("AT+CSCS=\"GSM\"\r\n", 500, "OK")
+            query("AT+CUSD=2\r\n", 800, null)
+            var r = ""
+            for (a in 0 until 3) {
+                r = query("AT+CUSD=1,\"*101#\"\r\n", 12000, "\\+CUSD:|ERROR")
+                if (Regex("\\+CUSD:").containsMatchIn(r)) break
+                query("AT+CUSD=2\r\n", 800, null); delay(2000)
             }
-            val kq = PduCodec.decode(catKetQua)
-            if (kq.er) {
-                val match = canBao.firstOrNull { it.strCmgs == kq.mr }
-                if (match != null) {
-                    usb.write("AT+CMGF=1\r\n")
-                    handler.postDelayed({
-                        usb.write("AT+CMGS=\"${match.sdtTrs}\"\r\n")
-                        handler.postDelayed({
-                            val body = "PING CMGS: ${match.strCmgs}; Den ${match.sdtCanPing}; " +
-                                    "SMSC nhan: ${kq.tPing}; Phat: ${kq.tReport}; ket qua: ${kq.kqSms}"
-                            usb.write(body)
-                            handler.postDelayed({
-                                usb.write("\u001a")
-                                canBao.remove(match)
-                                strDocKq = ""
-                                handler.postDelayed({ usb.write("AT+CMGF=0\r\n") }, 300)
-                            }, 1000)
-                        }, 1000)
-                    }, 300)
-                } else {
-                    strDocKq = ""
-                }
-            } else {
-                strDocKq = ""
+            if (Regex("\\+CUSD:").containsMatchIn(r)) { query("AT+CMGF=0\r\n", 400, "OK"); return@launch }
+
+            // USSD hỏng + là Viettel -> Viettel ngừng USSD từ 13/05/2026: nhắn "TK" gửi 191
+            if (mnc == "04") {
+                query("AT+CNMI=2,2,0,0,0\r\n", 500, "OK")
+                query("AT+CSCS=\"GSM\"\r\n", 500, "OK")
+                usb.write("AT+CMGS=\"191\"\r\n"); delay(600)
+                usb.write("TK"); delay(200); usb.write("\u001a")
+                val rr = query("", 12000, "\\+CMT:")
+                query("AT+CNMI=1,0,0,1,0\r\n", 400, "OK")
+                query("AT+CMGF=0\r\n", 400, "OK")
+                if (!Regex("\\+CMT:").containsMatchIn(rr))
+                    runOnUiThread { toast("Viettel đã ngừng *101#. Đã nhắn TK→191, xem trả lời ở khung RAW.") }
+                return@launch
             }
-        }
-        if (canBao.isNotEmpty()) handler.postDelayed({ pollForReport() }, 5000)
-    }
 
-    private fun onXoaBaoClick() {
-        canBao.clear()
-        ckbBao.isChecked = false
-        etNotify.setText("")
-        strDocKq = ""
-        toast("Đã xoá mọi yêu cầu báo")
-    }
-
-    // ---------------- AT command thủ công ----------------
-
-    private fun onSendAtClick() {
-        if (!usb.isOpen) { toast("Connect modem trước khi sử dụng lệnh"); return }
-        val cmd = etAt.text.toString()
-        usb.write(if (ckbCr.isChecked) "$cmd\r" else cmd)
-    }
-
-    private fun onCheckHardwareClick() {
-        if (!usb.isOpen) { toast("Connect modem trước khi sử dụng lệnh"); return }
-        usb.write("AT\r\n")
-        handler.postDelayed({ usb.write("AT+CSQ\r\n") }, 200)
-    }
-
-    private fun onCheckTkClick() {
-        if (!usb.isOpen) { toast("Connect modem trước khi sử dụng lệnh"); return }
-        usb.write("AT+CMGF=1\r\n")
-        handler.postDelayed({
-            usb.write("AT+CUSD=1,\"*101#\"\r\n")
-            handler.postDelayed({ usb.write("AT+CMGF=0\r\n") }, 200)
-        }, 200)
-    }
-
-    // ---------------- Decode thủ công đoạn text được chọn ----------------
-
-    private fun onDecodeClick() {
-        val start = etRaw.selectionStart
-        val end = etRaw.selectionEnd
-        if (start < 0 || end < 0 || start == end) {
-            toast("Bạn phải chọn (bôi đen) đoạn text REPORT cần DECODE trước")
-            return
-        }
-        val selected = etRaw.text.substring(minOf(start, end), maxOf(start, end))
-            .trim().replace("\r\n", "").replace("\r", "").replace("\n", "")
-        val kq = PduCodec.decode(selected)
-        if (!kq.er) {
-            toast("Chỉ chọn phần kết quả REPORT của lệnh PING để DECODE")
-            return
-        }
-        val line = "PING SMS có CMGS: ${kq.mr}\nĐến SĐT ${kq.sdtDcPing}\n" +
-                "Được SMSC nhận lúc: ${kq.tPing}, phát lúc: ${kq.tReport}\nCó kết quả: ${kq.kq}\n\n"
-        tvDecode.text = SpannableStringBuilder(tvDecode.text).append(line)
-        tvDecode.post {
-            val scrollAmount = tvDecode.layout?.getLineTop(tvDecode.lineCount)?.minus(tvDecode.height) ?: 0
-            if (scrollAmount > 0) tvDecode.scrollTo(0, scrollAmount) else tvDecode.scrollTo(0, 0)
+            query("AT+CMGF=0\r\n", 400, "OK")
+            runOnUiThread { toast("Chưa lấy được TK (mạng bận/retry). Đợi ~10s rồi bấm lại.") }
         }
     }
 
-    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+    // ---------- Gửi 1 lệnh, chờ khớp mustMatch hoặc hết timeout ----------
+    private suspend fun query(cmd: String, timeoutMs: Long, mustMatch: String?): String {
+        val start = synchronized(rxLock) { rxBuf.length }
+        if (cmd.isNotEmpty()) usb.write(cmd)
+        val re = mustMatch?.let { Regex(it) }
+        var waited = 0L
+        while (waited < timeoutMs) {
+            delay(80); waited += 80
+            val cur = synchronized(rxLock) { if (start <= rxBuf.length) rxBuf.substring(start) else rxBuf.toString() }
+            if (re != null && re.containsMatchIn(cur)) return cur
+        }
+        return synchronized(rxLock) { if (start <= rxBuf.length) rxBuf.substring(start) else rxBuf.toString() }
+    }
 }
